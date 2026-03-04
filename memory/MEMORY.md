@@ -31,3 +31,11 @@
 - X posts: working memory fMRI, brain MRI AI model, reward learning chloride homeostasis, sleep EEG deep learning, dopamine neuroimaging
 - Digest saved: digests/neuroscience-2026-03-04-v2.md
 - Telegram: sent successfully via send_telegram
+
+## 2026-03-04T20:29:18.767Z
+**Task:** Neuroscience daily digest (v3)
+- Generated digest with 5 web-sourced stories + 5 X/Twitter posts
+- Topics: Chronic pain sensory amplification (CU Anschutz/Annals of Neurology), Alzheimer's tau defense (UCLA/UCSF), Accelerated 5-day TMS (UCLA), New brain barrier (Nature Neuroscience), AI therapy ethics (Brown University)
+- X posts: @protocollabs (Precision Neuro BCI), @ScienceNews (math learning MRI), @NeurologyCP (dopamine imaging review), @MacrinePhD (neuropsychiatry paradigm shift), @newscientist (prolonged grief neuroscience)
+- Digest saved: digests/neuroscience-2026-03-04-v3.md
+- Telegram: sent successfully via send_telegram
