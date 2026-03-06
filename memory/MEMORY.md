@@ -39,3 +39,11 @@
 - X posts: @protocollabs (Precision Neuro BCI), @ScienceNews (math learning MRI), @NeurologyCP (dopamine imaging review), @MacrinePhD (neuropsychiatry paradigm shift), @newscientist (prolonged grief neuroscience)
 - Digest saved: digests/neuroscience-2026-03-04-v3.md
 - Telegram: sent successfully via send_telegram
+
+## 2026-03-06T19:20:33.672Z
+**Task:** Neuroscience daily digest
+- Generated digest with 5 web-sourced stories + 5 X/Twitter posts
+- Topics: Comb jelly proto-brain (U. Bergen/Science Advances), hidden biomechanical brain wiring force, whole-brain intelligence (Notre Dame/Nature Comms), accelerated 5-day TMS for depression (UCLA), BTK inhibitors for MS (Roche/Novartis)
+- X posts: @izhejiang (China BCIs clinical), @che_shr_cat (LLMs brain-like manifolds), @NIMHANS_BLR (I-CNCNC 2026 conference), @IPA_Online (psychogeriatrics neuroimaging), @thesigmamindset (neuroscience of intelligence)
+- Digest saved: digests/neuroscience-2026-03-06.md
+- Telegram: sent successfully
