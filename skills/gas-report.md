@@ -9,8 +9,8 @@ Read the last 7 days of memory/logs/ to track trends.
 Steps:
 1. Query gas prices on each tracked chain:
    ```bash
-   # Ethereum
-   curl -s "https://api.etherscan.io/api?module=gastracker&action=gasoracle"
+   # Ethereum (use ETHERSCAN_API_KEY if set for better rate limits)
+   curl -s "https://api.etherscan.io/api?module=gastracker&action=gasoracle&apikey=${ETHERSCAN_API_KEY:-}"
 
    # For EVM chains via RPC
    curl -s -X POST "${rpc_url}" \
