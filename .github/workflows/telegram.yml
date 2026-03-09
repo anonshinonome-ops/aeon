@@ -106,6 +106,12 @@ jobs:
         run: |
           TODAY=$(date -u +%Y-%m-%d)
           MESSAGE="${{ steps.check.outputs.message }}"
+          ALLOWED="Read,Write,Edit,Glob,Grep,WebFetch,WebSearch"
+          ALLOWED="$ALLOWED,Bash(curl:*),Bash(gh:*),Bash(git:*),Bash(jq:*)"
+          ALLOWED="$ALLOWED,Bash(bash tools/:*),Bash(./tools/:*)"
+          ALLOWED="$ALLOWED,Bash(mkdir:*),Bash(ls:*),Bash(cat:*),Bash(chmod:*)"
+          ALLOWED="$ALLOWED,Bash(date:*),Bash(echo:*),Bash(node:*),Bash(npm:*),Bash(npx:*)"
+          ALLOWED="$ALLOWED,Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(grep:*)"
           claude -p "Today is $TODAY. You received this message from the user on Telegram:
 
           \"$MESSAGE\"
@@ -118,7 +124,8 @@ jobs:
           - If they want you to remember something, update memory/MEMORY.md.
           - For anything else, do your best and explain what you did.
 
-          Always send your response back via Telegram so the user sees it." --dangerously-skip-permissions
+          Always send your response back via Telegram so the user sees it." \
+            --allowedTools "$ALLOWED"
 
       - name: Commit results
         if: steps.check.outputs.message != ''

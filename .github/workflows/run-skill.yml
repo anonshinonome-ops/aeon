@@ -136,7 +136,14 @@ jobs:
         run: |
           SKILL_NAME="${{ steps.skill.outputs.name }}"
           TODAY=$(date -u +%Y-%m-%d)
-          claude -p "Today is $TODAY. Read and execute the skill defined in skills/${SKILL_NAME}.md" --dangerously-skip-permissions
+          ALLOWED="Read,Write,Edit,Glob,Grep,WebFetch,WebSearch"
+          ALLOWED="$ALLOWED,Bash(curl:*),Bash(gh:*),Bash(git:*),Bash(jq:*)"
+          ALLOWED="$ALLOWED,Bash(bash tools/:*),Bash(./tools/:*)"
+          ALLOWED="$ALLOWED,Bash(mkdir:*),Bash(ls:*),Bash(cat:*),Bash(chmod:*)"
+          ALLOWED="$ALLOWED,Bash(date:*),Bash(echo:*),Bash(node:*),Bash(npm:*),Bash(npx:*)"
+          ALLOWED="$ALLOWED,Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(grep:*)"
+          claude -p "Today is $TODAY. Read and execute the skill defined in skills/${SKILL_NAME}.md" \
+            --allowedTools "$ALLOWED"
 
       - name: Check for silent ack
         id: ack_check
