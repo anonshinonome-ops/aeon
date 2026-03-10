@@ -29,6 +29,7 @@ on:
           - on-chain-monitor
           - paper-digest
           - pr-review
+          - reddit-digest
           - reflect
           - research-brief
           - rss-digest
