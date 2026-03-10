@@ -32,6 +32,7 @@ on:
           - research-brief
           - rss-digest
           - search-papers
+          - search-skill
           - self-review
           - skill-health
           - token-alert
