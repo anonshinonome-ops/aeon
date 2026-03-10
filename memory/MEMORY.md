@@ -31,12 +31,16 @@
 - `notify.sh` requires manual approval in CI environment (not auto-allowed)
 - Code health: no tests exist, monolithic workflow (426 lines), dead `pr-body.txt` — see [topics/code-health.md](topics/code-health.md)
 
+## Tracked Tokens
+| CoinGecko ID | Symbol | Alert Threshold (24h %) | Price Threshold |
+|--------------|--------|------------------------|-----------------|
+| bitcoin | BTC | 10% | — |
+| ethereum | ETH | 10% | — |
+| solana | SOL | 10% | — |
+
 ## Next Priorities
 - Send first digest *(stalled since 2026-03-10 — skill built but not yet executed)*
 - Continue daily digests
 - Address code health findings: remove dead files, add tests, split workflow
 - Reddit JSON API blocked from GitHub Actions IPs; use indirect web search as fallback
-
-## Next Priorities
-- Continue daily digests (reddit-digest first run complete 2026-03-10)
 - Consider alternative Reddit data sources (API blocked from GH Actions)
