@@ -22,7 +22,10 @@ concurrency:
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
+    if: github.event_name != 'schedule'
+    outputs:
+      matrix: ${{ steps.messages.outputs.matrix }}
 
     steps:
       - name: Check messages
@@ -35,6 +38,8 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
         run: |
+          MESSAGES='[]'
+
           # --- Webhook trigger (repository_dispatch) ---
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
             MESSAGE=$(echo '${{ toJson(github.event.client_payload.message) }}' | jq -r '.')
@@ -46,118 +51,153 @@ jobs:
                 discord-message) SOURCE="discord" ;;
                 slack-message) SOURCE="slack" ;;
               esac
-              echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
-              echo "message<<ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
-              echo "$MESSAGE" >> "$GITHUB_OUTPUT"
-              echo "ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
+              MESSAGES=$(echo "$MESSAGES" | jq -c --arg s "$SOURCE" --arg m "$MESSAGE" '. + [{source: $s, message: $m}]')
             fi
-            exit 0
-          fi
+          else
+            # --- Telegram (poll with offset-based ack) ---
+            if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+              RESPONSE=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?timeout=0&allowed_updates=%5B%22message%22%5D")
+              COUNT=$(echo "$RESPONSE" | jq -r '.result | length')
+              LAST_UPDATE_ID=""
 
-          # --- Telegram (poll with offset-based ack) ---
-          if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
-            RESPONSE=$(curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?timeout=0&allowed_updates=%5B%22message%22%5D")
-            MESSAGE=$(echo "$RESPONSE" | jq -r '.result[-1].message.text // empty')
-            UPDATE_ID=$(echo "$RESPONSE" | jq -r '.result[-1].update_id // empty')
-            CHAT_ID=$(echo "$RESPONSE" | jq -r '.result[-1].message.chat.id // empty')
+              if [ "$COUNT" -gt 0 ] 2>/dev/null; then
+                for i in $(seq 0 $((COUNT - 1))); do
+                  MSG=$(echo "$RESPONSE" | jq -r ".result[$i].message.text // empty")
+                  CHAT_ID=$(echo "$RESPONSE" | jq -r ".result[$i].message.chat.id // empty")
+                  LAST_UPDATE_ID=$(echo "$RESPONSE" | jq -r ".result[$i].update_id // empty")
 
-            if [ -n "$MESSAGE" ]; then
-              if [ "$CHAT_ID" != "$TELEGRAM_CHAT_ID" ]; then
-                echo "Telegram: ignoring message from unauthorized chat"
-                curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=$((UPDATE_ID + 1))" > /dev/null
-              else
-                # Acknowledge
-                curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=$((UPDATE_ID + 1))" > /dev/null
-                echo "Telegram: $MESSAGE"
-                echo "source=telegram" >> "$GITHUB_OUTPUT"
-                echo "message<<ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
-                echo "$MESSAGE" >> "$GITHUB_OUTPUT"
-                echo "ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
-                exit 0
+                  if [ -z "$MSG" ]; then continue; fi
+                  if [ "$CHAT_ID" != "$TELEGRAM_CHAT_ID" ]; then
+                    echo "Telegram: ignoring message from unauthorized chat"
+                    continue
+                  fi
+                  echo "Telegram: $MSG"
+                  MESSAGES=$(echo "$MESSAGES" | jq -c --arg m "$MSG" '. + [{source: "telegram", message: $m}]')
+                done
+
+                # Acknowledge all updates at once
+                if [ -n "$LAST_UPDATE_ID" ]; then
+                  curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=$((LAST_UPDATE_ID + 1))" > /dev/null
+                fi
+              fi
+            fi
+
+            # --- Discord (poll channel, reaction-based ack) ---
+            if [ -n "${DISCORD_BOT_TOKEN:-}" ] && [ -n "${DISCORD_CHANNEL_ID:-}" ]; then
+              RESPONSE=$(curl -s -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
+                "https://discord.com/api/v10/channels/$DISCORD_CHANNEL_ID/messages?limit=10")
+              COUNT=$(echo "$RESPONSE" | jq -r 'if type == "array" then length else 0 end')
+
+              if [ "$COUNT" -gt 0 ] 2>/dev/null; then
+                # Discord returns newest first — reverse to get chronological order
+                for i in $(seq $((COUNT - 1)) -1 0); do
+                  MSG_CONTENT=$(echo "$RESPONSE" | jq -r ".[$i].content // empty")
+                  MSG_ID=$(echo "$RESPONSE" | jq -r ".[$i].id // empty")
+                  MSG_AUTHOR_BOT=$(echo "$RESPONSE" | jq -r ".[$i].author.bot // false")
+                  HAS_REACTION=$(echo "$RESPONSE" | jq -r ".[$i].reactions[]? | select(.emoji.name == \"✅\") | .me // false")
+
+                  if [ -z "$MSG_CONTENT" ] || [ "$MSG_AUTHOR_BOT" = "true" ] || [ "$HAS_REACTION" = "true" ]; then
+                    continue
+                  fi
+                  # Mark as processed
+                  curl -s -X PUT -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
+                    "https://discord.com/api/v10/channels/$DISCORD_CHANNEL_ID/messages/$MSG_ID/reactions/%E2%9C%85/@me" > /dev/null
+                  echo "Discord: $MSG_CONTENT"
+                  MESSAGES=$(echo "$MESSAGES" | jq -c --arg m "$MSG_CONTENT" '. + [{source: "discord", message: $m}]')
+                done
+              fi
+            fi
+
+            # --- Slack (poll channel, reaction-based ack) ---
+            if [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_CHANNEL_ID:-}" ]; then
+              RESPONSE=$(curl -s -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                "https://slack.com/api/conversations.history?channel=$SLACK_CHANNEL_ID&limit=10")
+              COUNT=$(echo "$RESPONSE" | jq -r '.messages | length')
+
+              if [ "$COUNT" -gt 0 ] 2>/dev/null; then
+                # Slack returns newest first — reverse to get chronological order
+                for i in $(seq $((COUNT - 1)) -1 0); do
+                  MSG_TEXT=$(echo "$RESPONSE" | jq -r ".messages[$i].text // empty")
+                  MSG_TS=$(echo "$RESPONSE" | jq -r ".messages[$i].ts // empty")
+                  MSG_BOT_ID=$(echo "$RESPONSE" | jq -r ".messages[$i].bot_id // empty")
+                  HAS_REACTION=$(echo "$RESPONSE" | jq -r ".messages[$i].reactions[]? | select(.name == \"white_check_mark\") | .name // empty")
+
+                  if [ -z "$MSG_TEXT" ] || [ "$MSG_BOT_ID" != "null" ] || [ -n "$HAS_REACTION" ]; then
+                    continue
+                  fi
+                  # Mark as processed
+                  curl -s -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                    -H "Content-Type: application/json" \
+                    -d "$(jq -n --arg ch "$SLACK_CHANNEL_ID" --arg ts "$MSG_TS" \
+                      '{channel: $ch, timestamp: $ts, name: "white_check_mark"}')" \
+                    "https://slack.com/api/reactions.add" > /dev/null
+                  echo "Slack: $MSG_TEXT"
+                  MESSAGES=$(echo "$MESSAGES" | jq -c --arg m "$MSG_TEXT" '. + [{source: "slack", message: $m}]')
+                done
               fi
             fi
           fi
 
-          # --- Discord (poll channel, reaction-based ack) ---
-          if [ -n "${DISCORD_BOT_TOKEN:-}" ] && [ -n "${DISCORD_CHANNEL_ID:-}" ]; then
-            RESPONSE=$(curl -s -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
-              "https://discord.com/api/v10/channels/$DISCORD_CHANNEL_ID/messages?limit=1")
-            MSG_CONTENT=$(echo "$RESPONSE" | jq -r '.[0].content // empty')
-            MSG_ID=$(echo "$RESPONSE" | jq -r '.[0].id // empty')
-            MSG_AUTHOR_BOT=$(echo "$RESPONSE" | jq -r '.[0].author.bot // false')
-
-            if [ -n "$MSG_CONTENT" ] && [ "$MSG_AUTHOR_BOT" != "true" ]; then
-              # Check if already processed (bot reacted with checkmark)
-              HAS_REACTION=$(echo "$RESPONSE" | jq -r '.[0].reactions[]? | select(.emoji.name == "✅") | .me // false')
-              if [ "$HAS_REACTION" != "true" ]; then
-                # Mark as processed
-                curl -s -X PUT -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
-                  "https://discord.com/api/v10/channels/$DISCORD_CHANNEL_ID/messages/$MSG_ID/reactions/%E2%9C%85/@me" > /dev/null
-                echo "Discord: $MSG_CONTENT"
-                echo "source=discord" >> "$GITHUB_OUTPUT"
-                echo "message<<ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
-                echo "$MSG_CONTENT" >> "$GITHUB_OUTPUT"
-                echo "ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            fi
+          COUNT=$(echo "$MESSAGES" | jq -r 'length')
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No new messages"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+          else
+            echo "Found $COUNT message(s)"
+            # Build matrix: each message gets an index so the respond job can extract it
+            MATRIX=$(echo "$MESSAGES" | jq -c '{include: [range(length) as $i | {index: $i, source: .[$i].source}]}')
+            echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+            # Store full messages array as an artifact via file
+            echo "$MESSAGES" > /tmp/messages.json
           fi
 
-          # --- Slack (poll channel, reaction-based ack) ---
-          if [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_CHANNEL_ID:-}" ]; then
-            RESPONSE=$(curl -s -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-              "https://slack.com/api/conversations.history?channel=$SLACK_CHANNEL_ID&limit=1")
-            MSG_TEXT=$(echo "$RESPONSE" | jq -r '.messages[0].text // empty')
-            MSG_TS=$(echo "$RESPONSE" | jq -r '.messages[0].ts // empty')
-            MSG_BOT_ID=$(echo "$RESPONSE" | jq -r '.messages[0].bot_id // empty')
+      - name: Upload messages
+        if: fromJson(steps.messages.outputs.matrix).include[0] != null
+        uses: actions/upload-artifact@v4
+        with:
+          name: messages
+          path: /tmp/messages.json
+          retention-days: 1
 
-            if [ -n "$MSG_TEXT" ] && [ "$MSG_BOT_ID" = "null" ]; then
-              # Check if already processed
-              HAS_REACTION=$(echo "$RESPONSE" | jq -r '.messages[0].reactions[]? | select(.name == "white_check_mark") | .name // empty')
-              if [ -z "$HAS_REACTION" ]; then
-                # Mark as processed
-                curl -s -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d "$(jq -n --arg ch "$SLACK_CHANNEL_ID" --arg ts "$MSG_TS" \
-                    '{channel: $ch, timestamp: $ts, name: "white_check_mark"}')" \
-                  "https://slack.com/api/reactions.add" > /dev/null
-                echo "Slack: $MSG_TEXT"
-                echo "source=slack" >> "$GITHUB_OUTPUT"
-                echo "message<<ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
-                echo "$MSG_TEXT" >> "$GITHUB_OUTPUT"
-                echo "ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            fi
-          fi
+  respond:
+    needs: poll
+    if: fromJson(needs.poll.outputs.matrix).include[0] != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix: ${{ fromJson(needs.poll.outputs.matrix) }}
+      fail-fast: false
 
-          echo "No new messages"
-
-      - name: Check if there's a message
-        id: work
-        run: |
-          if [ -n "${{ steps.messages.outputs.source }}" ]; then
-            echo "has_message=true" >> "$GITHUB_OUTPUT"
-          fi
-
+    steps:
       - name: Checkout repo
-        if: steps.work.outputs.has_message == 'true'
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download messages
+        uses: actions/download-artifact@v4
+        with:
+          name: messages
+
+      - name: Extract message
+        id: msg
+        run: |
+          SOURCE=$(jq -r '.[${{ matrix.index }}].source' messages.json)
+          MESSAGE=$(jq -r '.[${{ matrix.index }}].message' messages.json)
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "message<<ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
+          echo "$MESSAGE" >> "$GITHUB_OUTPUT"
+          echo "ENDOFMESSAGE" >> "$GITHUB_OUTPUT"
+
       - name: Setup Node.js
-        if: steps.work.outputs.has_message == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install Claude Code
-        if: steps.work.outputs.has_message == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Run
-        if: steps.work.outputs.has_message == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -208,8 +248,8 @@ jobs:
           ALLOWED="$ALLOWED,Bash(date:*),Bash(echo:*),Bash(node:*),Bash(npm:*),Bash(npx:*)"
           ALLOWED="$ALLOWED,Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(grep:*)"
 
-          SOURCE="${{ steps.messages.outputs.source }}"
-          MESSAGE="${{ steps.messages.outputs.message }}"
+          SOURCE="${{ steps.msg.outputs.source }}"
+          MESSAGE="${{ steps.msg.outputs.message }}"
           claude -p "Today is $TODAY. You received this message from the user on ${SOURCE}:
 
           \"$MESSAGE\"
@@ -226,14 +266,13 @@ jobs:
             --model "$MODEL" --allowedTools "$ALLOWED"
 
       - name: Commit results
-        if: steps.work.outputs.has_message == 'true'
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          rm -f ./notify
+          rm -f ./notify messages.json
           git add -A
           git diff --staged --quiet && exit 0
-          SOURCE="${{ steps.messages.outputs.source }}"
+          SOURCE="${{ steps.msg.outputs.source }}"
           git commit -m "chore($SOURCE): auto-commit $(date +%Y-%m-%d)"
           for i in 1 2 3; do
             if git pull --rebase origin main; then
