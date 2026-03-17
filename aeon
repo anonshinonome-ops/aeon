@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+DASHBOARD="$DIR/dashboard"
+
+cd "$DASHBOARD"
+
+# Install deps if needed
+if [ ! -d node_modules ]; then
+  echo "Installing dependencies..."
+  npm install
+fi
+
+echo "Starting Aeon dashboard..."
+npm run dev
