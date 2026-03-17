@@ -503,15 +503,15 @@ export default function Dashboard() {
             >
               + Import
             </button>
-            {hasChanges && (
-              <button
-                onClick={syncToGithub}
-                disabled={syncing}
-                className="bg-green-600 hover:bg-green-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-              >
-                {syncing ? 'Pushing...' : 'Push to GitHub'}
-              </button>
-            )}
+            <button
+              onClick={syncToGithub}
+              disabled={syncing || !hasChanges}
+              className={`text-white text-xs px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 ${
+                hasChanges ? 'bg-green-600 hover:bg-green-500' : 'bg-zinc-700'
+              }`}
+            >
+              {syncing ? 'Pushing...' : 'Push to GitHub'}
+            </button>
           </div>
         </div>
       </header>
@@ -570,7 +570,8 @@ export default function Dashboard() {
                   {/* Run */}
                   <button
                     onClick={(e) => { e.stopPropagation(); runSkill(skill.name) }}
-                    disabled={!!busy[`r-${skill.name}`]}
+                    disabled={!!busy[`r-${skill.name}`] || (authStatus !== null && !authStatus.authenticated)}
+                    title={authStatus !== null && !authStatus.authenticated ? 'Authenticate first' : undefined}
                     className="text-zinc-500 hover:text-zinc-300 text-[10px] px-2 py-1 rounded bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-800/50 transition-colors disabled:opacity-50 shrink-0"
                   >
                     {busy[`r-${skill.name}`] ? '\u00b7\u00b7\u00b7' : '\u25b6 Run'}

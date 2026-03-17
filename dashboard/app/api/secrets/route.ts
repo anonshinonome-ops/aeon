@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { execSync } from 'child_process'
 
 const KNOWN_SECRETS = [
-  { name: 'ANTHROPIC_API_KEY', group: 'Core', description: 'Anthropic API key for Claude Code' },
   { name: 'CLAUDE_CODE_OAUTH_TOKEN', group: 'Core', description: 'Claude Code OAuth token (set via Authenticate button)' },
+  { name: 'ANTHROPIC_API_KEY', group: 'Core', description: 'Anthropic API key for Claude Code' },
   { name: 'TELEGRAM_BOT_TOKEN', group: 'Telegram', description: 'Bot token from @BotFather' },
   { name: 'TELEGRAM_CHAT_ID', group: 'Telegram', description: 'Your chat ID' },
   { name: 'DISCORD_BOT_TOKEN', group: 'Discord', description: 'Discord bot token' },
