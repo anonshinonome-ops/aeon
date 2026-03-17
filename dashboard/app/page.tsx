@@ -319,13 +319,23 @@ export default function Dashboard() {
     }
   }
 
+  const refreshRuns = async () => {
+    try {
+      const res = await fetch('/api/runs')
+      if (res.ok) setRuns((await res.json()).runs)
+    } catch { /* ignore */ }
+  }
+
   const runSkill = async (name: string) => {
     setBusy(b => ({ ...b, [`r-${name}`]: true }))
     try {
       const res = await fetch(`/api/skills/${name}/run`, { method: 'POST' })
       if (res.ok) {
         flash(`${name} triggered`)
-        setTimeout(fetchData, 5000)
+        // Poll runs a few times so the new run appears quickly
+        for (const delay of [2000, 5000, 10000, 20000]) {
+          setTimeout(refreshRuns, delay)
+        }
       } else {
         const data = await res.json()
         flash(data.error || 'Failed to trigger')
