@@ -612,7 +612,7 @@ export default function Dashboard() {
               onClick={() => setShowImport(true)}
               className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs px-3 py-1.5 rounded-lg border border-zinc-700/50 transition-colors"
             >
-              + Upload
+              + Add Skill
             </button>
             <button
               onClick={syncToGithub}
