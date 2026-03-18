@@ -74,6 +74,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NODE_OPTIONS: '--no-deprecation'
 
 concurrency:
   group: aeon-${{ inputs.skill || github.event.action || github.run_id }}
