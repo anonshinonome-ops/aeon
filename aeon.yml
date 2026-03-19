@@ -3,7 +3,6 @@
 # Enable skills by setting enabled: true. Multiple skills at the same time run in parallel.
 
 skills:
-  # --- Morning block (7 AM UTC) ---
   morning-brief:
     enabled: false
     schedule: "0 7 * * *"

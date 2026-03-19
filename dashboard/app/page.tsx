@@ -66,13 +66,16 @@ function localToUtc24(localH: number): number {
   return ((localH - getUtcOffsetHours()) % 24 + 24) % 24
 }
 
-function parseCron(cron: string): { mode: 'interval'; hours: number } | { mode: 'time'; hour12: number; minute: number; ampm: 'AM' | 'PM'; days: number[] } {
+function parseCron(cron: string): { mode: 'interval'; value: number; unit: 'm' | 'h' } | { mode: 'time'; hour12: number; minute: number; ampm: 'AM' | 'PM'; days: number[] } {
   const parts = cron.split(' ')
   const m = parts[0]
   const h = parts[1]
   const dow = parts[4]
+  if (m.includes('/')) {
+    return { mode: 'interval', value: parseInt(m.split('/')[1]) || 5, unit: 'm' }
+  }
   if (h === '*' || h.includes('/')) {
-    return { mode: 'interval', hours: h === '*' ? 1 : parseInt(h.split('/')[1]) || 1 }
+    return { mode: 'interval', value: h === '*' ? 1 : parseInt(h.split('/')[1]) || 1, unit: 'h' }
   }
   const utcH = parseInt(h)
   const minute = parseInt(m) || 0
@@ -88,15 +91,15 @@ function parseCron(cron: string): { mode: 'interval'; hours: number } | { mode: 
 
 function cronLabel(cron: string): string {
   const p = parseCron(cron)
-  if (p.mode === 'interval') return `Every ${p.hours}h`
+  if (p.mode === 'interval') return `Every ${p.value}${p.unit}`
   const time = `${p.hour12}:${String(p.minute).padStart(2, '0')} ${p.ampm}`
   if (p.days.includes(-1)) return `${time} daily`
   const dayNames = p.days.map(d => DAYS.find(x => x.value === d)?.label || '').filter(Boolean)
   return `${time} ${dayNames.join(',')}`
 }
 
-function buildCron(mode: 'interval' | 'time', hours: number, hour12: number, minute: number, ampm: 'AM' | 'PM', days: number[]): string {
-  if (mode === 'interval') return `0 */${hours} * * *`
+function buildCron(mode: 'interval' | 'time', intervalValue: number, intervalUnit: 'm' | 'h', hour12: number, minute: number, ampm: 'AM' | 'PM', days: number[]): string {
+  if (mode === 'interval') return intervalUnit === 'm' ? `*/${intervalValue} * * * *` : `0 */${intervalValue} * * *`
   let localH = hour12
   if (ampm === 'PM' && localH !== 12) localH += 12
   if (ampm === 'AM' && localH === 12) localH = 0
@@ -108,7 +111,8 @@ function buildCron(mode: 'interval' | 'time', hours: number, hour12: number, min
 function ScheduleEditor({ cron, onSave }: { cron: string; onSave: (cron: string) => void }) {
   const parsed = parseCron(cron)
   const [mode, setMode] = useState<'interval' | 'time'>(parsed.mode)
-  const [hours, setHours] = useState(parsed.mode === 'interval' ? parsed.hours : 3)
+  const [intervalValue, setIntervalValue] = useState(parsed.mode === 'interval' ? parsed.value : 3)
+  const [intervalUnit, setIntervalUnit] = useState<'m' | 'h'>(parsed.mode === 'interval' ? parsed.unit : 'h')
   const [hour12, setHour12] = useState(parsed.mode === 'time' ? parsed.hour12 : 7)
   const [minute, setMinute] = useState(parsed.mode === 'time' ? parsed.minute : 0)
   const [ampm, setAmpm] = useState<'AM' | 'PM'>(parsed.mode === 'time' ? parsed.ampm : 'AM')
@@ -128,7 +132,7 @@ function ScheduleEditor({ cron, onSave }: { cron: string; onSave: (cron: string)
     }
   }
 
-  const apply = () => onSave(buildCron(mode, hours, hour12, minute, ampm, days))
+  const apply = () => onSave(buildCron(mode, intervalValue, intervalUnit, hour12, minute, ampm, days))
 
   return (
     <div className="px-4 py-2 bg-zinc-900/80 border-b border-zinc-800/30 flex flex-wrap items-center gap-x-4 gap-y-2" onClick={(e) => e.stopPropagation()}>
@@ -137,12 +141,17 @@ function ScheduleEditor({ cron, onSave }: { cron: string; onSave: (cron: string)
         <input type="radio" name="sched-mode" checked={mode === 'interval'} onChange={() => setMode('interval')} className="accent-green-500 w-3 h-3" />
         <span className="text-[10px] text-zinc-400">Every</span>
         <input
-          type="number" min={1} max={24} value={hours}
+          type="number" min={1} max={intervalUnit === 'm' ? 59 : 24} value={intervalValue}
           onFocus={() => setMode('interval')}
-          onChange={(e) => { setHours(Math.max(1, Math.min(24, parseInt(e.target.value) || 1))); setMode('interval') }}
+          onChange={(e) => { setIntervalValue(Math.max(1, Math.min(intervalUnit === 'm' ? 59 : 24, parseInt(e.target.value) || 1))); setMode('interval') }}
           className="w-10 bg-zinc-800 text-zinc-200 text-[10px] rounded px-1.5 py-0.5 border border-zinc-700/50 outline-none text-center font-mono"
         />
-        <span className="text-[10px] text-zinc-400">h</span>
+        <div className="flex text-[10px] rounded overflow-hidden border border-zinc-700/50">
+          <button type="button" onClick={() => { setIntervalUnit('m'); setMode('interval') }}
+            className={`px-1.5 py-0.5 ${intervalUnit === 'm' ? 'bg-zinc-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>m</button>
+          <button type="button" onClick={() => { setIntervalUnit('h'); setMode('interval') }}
+            className={`px-1.5 py-0.5 ${intervalUnit === 'h' ? 'bg-zinc-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>h</button>
+        </div>
       </label>
 
       <span className="text-zinc-700">|</span>
