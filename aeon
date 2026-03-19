@@ -14,6 +14,11 @@ fi
 
 PORT="${PORT:-5555}"
 
+# If port is in use, try the next one
+if lsof -iTCP:"$PORT" -sTCP:LISTEN -t >/dev/null 2>&1; then
+  PORT=$((PORT + 1))
+fi
+
 echo ""
 echo "  ╔══════════════════════════════════════╗"
 echo "  ║         ⚡ Aeon Dashboard ⚡          ║"

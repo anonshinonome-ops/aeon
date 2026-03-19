@@ -34,6 +34,7 @@ on:
           - rss-digest
           - search-papers
           - search-skill
+          - security-digest
           - self-review
           - skill-health
           - token-alert
@@ -224,30 +225,36 @@ jobs:
           git add -A
           git diff --staged --quiet && exit 0
           git commit -m "chore($LABEL): auto-commit $(date +%Y-%m-%d)"
-          for i in 1 2 3; do
-            if git pull --rebase origin main; then
-              git push -u origin HEAD && exit 0
-            else
+          for i in $(seq 1 10); do
+            # Pull and rebase onto latest remote
+            if ! git pull --rebase origin main 2>/dev/null; then
               echo "Rebase conflict on attempt $i, auto-resolving..."
-              # Auto-resolve conflicts in append-only files (logs, memory)
-              for f in $(git diff --name-only --diff-filter=U); do
-                if [[ "$f" == memory/logs/* ]] || [[ "$f" == memory/topics/* ]] || [[ "$f" == memory/MEMORY.md ]]; then
-                  # Accept both sides for append-only files
-                  sed -i '/^<<<<<<< /d; /^=======/d; /^>>>>>>> /d' "$f"
-                  git add "$f"
+              while true; do
+                CONFLICTED=$(git diff --name-only --diff-filter=U) || true
+                [ -z "$CONFLICTED" ] && break
+                for f in $CONFLICTED; do
+                  if [[ "$f" == memory/logs/* ]] || [[ "$f" == memory/topics/* ]] || [[ "$f" == memory/MEMORY.md ]]; then
+                    sed -i '/^<<<<<<< /d; /^=======/d; /^>>>>>>> /d' "$f"
+                    git add "$f"
+                  else
+                    git checkout --theirs "$f"
+                    git add "$f"
+                  fi
+                done
+                if git diff --cached --quiet; then
+                  git rebase --skip || true
                 else
-                  # For other files, accept theirs and re-apply our changes next run
-                  git checkout --theirs "$f"
-                  git add "$f"
+                  GIT_EDITOR=true git rebase --continue || true
                 fi
               done
-              if git diff --cached --quiet; then
-                git rebase --skip
-              else
-                GIT_EDITOR=true git rebase --continue
-              fi
             fi
-            echo "Push attempt $i failed, retrying..."
+            # Try to push — if it fails, another job beat us, loop and re-pull
+            if git push -u origin HEAD 2>/dev/null; then
+              echo "Pushed successfully on attempt $i"
+              exit 0
+            fi
+            echo "Push attempt $i failed (ref moved), retrying in ${i}s..."
+            sleep "$i"
           done
-          echo "Failed to push after 3 attempts"
+          echo "Failed to push after 10 attempts"
           exit 1
