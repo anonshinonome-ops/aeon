@@ -97,8 +97,13 @@ jobs:
             done
           fi
 
-          # --- Slack (collect ALL unprocessed messages) ---
+          # --- Slack (collect ALL unprocessed messages, mention-only) ---
           if [ -n "${SLACK_BOT_TOKEN:-}" ] && [ -n "${SLACK_CHANNEL_ID:-}" ]; then
+            # Get bot's own user ID for mention filtering
+            SLACK_BOT_USER_ID=$(curl -s -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              "https://slack.com/api/auth.test" | jq -r '.user_id // empty')
+            echo "Slack bot user ID: $SLACK_BOT_USER_ID"
+
             RESPONSE=$(curl -s -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
               "https://slack.com/api/conversations.history?channel=$SLACK_CHANNEL_ID&limit=10")
             COUNT=$(echo "$RESPONSE" | jq '.messages | length')
@@ -110,14 +115,21 @@ jobs:
               HAS_CHECK=$(echo "$RESPONSE" | jq -r ".messages[$i].reactions[]? | select(.name == \"white_check_mark\") | .name // empty")
 
               if [ -n "$TEXT" ] && [ "$BOT_ID" = "null" ] && [ -z "$HAS_CHECK" ]; then
+                # Only process messages that mention the bot (@AIずんだもん)
+                if [ -n "$SLACK_BOT_USER_ID" ] && [[ "$TEXT" != *"<@${SLACK_BOT_USER_ID}>"* ]]; then
+                  echo "Slack: skipping (no mention): $TEXT"
+                  continue
+                fi
+                # Strip the mention from the message text before dispatching
+                CLEAN_TEXT=$(echo "$TEXT" | sed "s/<@${SLACK_BOT_USER_ID}>//g" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
                 # Mark as processed
                 curl -s -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
                   -H "Content-Type: application/json" \
                   -d "$(jq -n --arg ch "$SLACK_CHANNEL_ID" --arg ts "$TS" \
                     '{channel: $ch, timestamp: $ts, name: "white_check_mark"}')" \
                   "https://slack.com/api/reactions.add" > /dev/null
-                MESSAGES=$(echo "$MESSAGES" | jq --arg src "slack" --arg txt "$TEXT" '. + [{source: $src, text: $txt}]')
-                echo "Slack: $TEXT"
+                MESSAGES=$(echo "$MESSAGES" | jq --arg src "slack" --arg txt "$CLEAN_TEXT" '. + [{source: $src, text: $txt}]')
+                echo "Slack: $CLEAN_TEXT"
               fi
             done
           fi
